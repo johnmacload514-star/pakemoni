@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>パケ管理アプリ - PakeMoni</title>
+    <style>
+        /* --- デザイン（CSS） --- */
+        body { font-family: "Helvetica Neue", Arial, sans-serif; background-color: #f4f4f9; margin: 0; padding: 0; color: #333; padding-bottom: 80px; }
+        
+        /* ヘッダー */
+        header { 
+            background-color: #2c3e50; color: white; padding: 10px 15px; 
+            position: sticky; top: 0; z-index: 10; box-shadow: 0 2px 5px rgba(0,0,0,0.1); 
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        h1 { margin: 0; font-size: 1.1rem; flex-grow: 1; text-align: center; }
+        .settings-btn { background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer; padding: 0; }
+
+        .container { max-width: 600px; margin: 0 auto; padding: 15px; }
+
+        /* 画面切り替え */
+        .view-section { display: none; animation: fadeIn 0.3s; }
+        .view-section.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        /* ナビゲーション */
+        .bottom-nav {
+            position: fixed; bottom: 0; left: 0; width: 100%; height: 60px;
+            background: white; border-top: 1px solid #ddd; display: flex; justify-content: space-around; align-items: center;
+            z-index: 100; box-shadow: 0 -2px 5px rgba(0,0,0,0.05);
+        }
+        .nav-item { text-align: center; flex: 1; color: #7f8c8d; cursor: pointer; padding: 8px 0; font-size: 0.8rem; }
+        .nav-item.active { color: #3498db; font-weight: bold; }
+        .nav-icon { display: block; font-size: 1.2rem; margin-bottom: 2px; }
+
+        /* リストカード */
+        .pake-list { display: flex; flex-direction: column; gap: 10px; }
+        .pake-card {
+            background: white; padding: 15px; border-radius: 8px; 
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1); cursor: pointer;
+            border-left: 6px solid #ccc; position: relative;
+        }
+        .status-done { border-left-color: #27ae60; }
+        .is-temp-origin { background-color: #fffbfb; } 
+
+        .card-header { display: flex; justify-content: space-between; margin-bottom: 5px; }
+        .date-label { font-weight: bold; color: #555; }
+        .badge { font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; color: white; background: #95a5a6;}
+        .badge-stock { background-color: #e74c3c; }
+
+        .program-name { font-size: 1.1rem; font-weight: bold; margin-bottom: 4px; }
+        .d-name { font-size: 0.9rem; color: #666; }
+        .moni-status { font-size: 0.85rem; margin-top: 8px; color: #e67e22; font-weight: bold; }
+        .moni-status.done { color: #27ae60; }
+
+        /* フォーム要素 */
+        .form-container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .input-group label { display: block; margin-bottom: 5px; font-weight: bold; margin-top: 15px; }
+        input, select, textarea { width: 100%; padding: 12px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; font-size: 1rem; }
+        input:disabled { background-color: #eee; color: #aaa; }
+
+        .btn { width: 100%; padding: 14px; border: none; border-radius: 5px; font-size: 1rem; cursor: pointer; color: white; margin-top: 20px; font-weight: bold; }
+        .btn-register { background-color: #3498db; }
+        .btn-save { background-color: #27ae60; }
+        .btn-danger { background-color: #e74c3c; color: white; } /* 赤色ボタン */
+        .btn-close { background-color: #7f8c8d; margin-top: 10px; }
+
+        /* モーダル */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); display: none; 
+            justify-content: center; align-items: flex-end; z-index: 200;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal-content {
+            background: white; width: 100%; max-width: 600px; border-radius: 15px 15px 0 0;
+            padding: 20px; box-sizing: border-box; animation: slideUp 0.3s ease;
+            max-height: 90vh; overflow-y: auto;
+        }
+        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+        .modal-details p { margin: 8px 0; border-bottom: 1px solid #eee; padding-bottom: 8px; display: flex; align-items: center; justify-content: space-between; }
+        .label { font-size: 0.85rem; color: #888; display: block; min-width: 100px;}
+        .value { text-align: right; font-weight: bold; }
+        
+        .edit-input { 
+            padding: 5px; border: 1px solid #ddd; border-radius: 4px; 
+            font-size: 1rem; width: 150px; text-align: right;
+            background-color: #fcfcfc;
+        }
+
+    </style>
+</head>
+<body>
+
+<header>
+    <button class="settings-btn" onclick="openSettings()">⚙️</button>
+    <h1 id="pageTitle">📺 放送パケ一覧</h1>
+    <div style="width: 24px;"></div>
+</header>
+
+<div class="container">
+    
+    <div id="viewNormal" class="view-section active">
+        <div id="normalList" class="pake-list"></div>
+    </div>
+
+    <div id="viewTemp" class="view-section">
+        <div class="alert" style="background:#fff3cd; color:#856404; padding:10px; border-radius:4px; margin-bottom:10px; font-size:0.9rem;">
+            💡 放送未定のパケ（古い順）
+        </div>
+        <div id="tempList" class="pake-list"></div>
+    </div>
+
+    <div id="viewRegister" class="view-section">
+        <div class="form-container">
+            <h2 style="margin-top:0;">🆕 パケ提出</h2>
+            <div class="input-group">
+                <label>パケ種別</label>
+                <select id="regType" onchange="toggleDateInput()">
+                    <option value="normal">通常パケ（放送日あり）</option>
+                    <option value="temp">🔴 臨時パケ（ストック）</option>
+                </select>
+                <label>担当D</label>
+                <select id="regDName">
+                    <option value="">選択してください</option>
+                </select>
+                <label>番組名</label>
+                <input type="text" id="regProgram" placeholder="番組名を入力">
+                <label>放送日</label>
+                <input type="date" id="regDate">
+                <span id="dateNote" style="font-size:0.8rem; color:#e74c3c; display:none;">※臨時パケはここで放送日を決めません</span>
+            </div>
+            <button class="btn btn-register" onclick="registerPake()">提出（登録）する</button>
+        </div>
+    </div>
+
+</div>
+
+<div id="detailModal" class="modal-overlay">
+    <div class="modal-content">
+        <h2>詳細確認・修正</h2>
+        <div class="modal-details">
+            <p>
+                <span class="label">放送日</span>
+                <input type="date" id="detailDateInput" class="edit-input">
+            </p>
+            <p><span class="label">種別</span><span id="detailType" class="value"></span></p>
+            <p><span class="label">担当D</span><span id="detailDName" class="value"></span></p>
+            <p><span class="label">番組名</span><span id="detailProgram" class="value"></span></p>
+            <p><span class="label">登録送信日時</span><span id="detailSubmittedAt" class="value"></span></p>
+            <p><span class="label">最終モニ会担当者</span><span id="detailLastReviewer" class="value"></span></p>
+        </div>
+        
+        <div style="background:#f9f9f9; padding:15px; border-radius:8px; margin-top:15px;">
+            <h3 style="margin-top:0; font-size:1rem;">📝 モニ会記録</h3>
+            
+            <label style="font-size:0.85rem; font-weight:bold;">確認担当者</label>
+            <select id="inputReviewer" style="margin-bottom:10px;">
+                <option value="">選択してください</option>
+            </select>
+
+            <label style="font-size:0.85rem; font-weight:bold;">確認日時</label>
+            <input type="datetime-local" id="inputReviewTime">
+            
+            <button class="btn btn-save" onclick="saveChanges()">変更を保存・記録する</button>
+        </div>
+
+        <div style="margin-top: 30px; border-top: 1px solid #eee; padding-top: 10px;">
+             <button class="btn btn-danger" onclick="deletePake()">🗑️ このパケを削除する</button>
+        </div>
+
+        <button class="btn btn-close" onclick="closeDetailModal()">閉じる</button>
+    </div>
+</div>
+
+<div id="settingsModal" class="modal-overlay">
+    <div class="modal-content">
+        <h2>⚙️ データ管理</h2>
+        <textarea id="dataExportArea" rows="10" readonly style="font-family:monospace; font-size:0.8rem; background:#f4f4f4; width:100%;"></textarea>
+        <button class="btn btn-register" onclick="copyData()">📋 クリップボードにコピー</button>
+        <hr style="margin:20px 0; border:0; border-top:1px solid #ddd;">
+        <button class="btn btn-danger" onclick="resetData()">🗑️ 全データ削除（リセット）</button>
+        <button class="btn btn-close" onclick="closeSettings()">閉じる</button>
+    </div>
+</div>
+
+<nav class="bottom-nav">
+    <div class="nav-item active" onclick="switchView('viewNormal', this, '📺 放送パケ一覧')"><span class="nav-icon">📺</span>放送一覧</div>
+    <div class="nav-item" onclick="switchView('viewTemp', this, '📦 臨時ストック')"><span class="nav-icon">📦</span>臨時ストック</div>
+    <div class="nav-item" onclick="switchView('viewRegister', this, '✏️ 新規登録')"><span class="nav-icon">✏️</span>登録</div>
+</nav>
+
+<script>
+    // --- 設定 ---
+    const directorOptions = ["黒崎洋介", "小野田裕紀","西田悠愛","平川真暉","京原颯真","山下さくら", "山口翔暉", "近藤綾音", "右馬帆乃夏", "大内麻優子", "神谷剛丸", "坂下寧彩", "長谷川潤", "松葉晴夏", "丸本百夏", "山口昇太","久重興", "鳥羽想平", "杉本碧海","片山莉奈","景山心路","土井天翔","平尾善紀","石井三知留","竹田晴","深作駿介","谷口梨奈"];
+    const reviewerOptions = ["久重興", "鳥羽想平", "杉本碧海","片山莉奈","景山心路","土井天翔","平尾善紀","石井三知留","竹田晴","深作駿介","谷口梨奈",]; 
+
+    // --- データ管理 ---
+    let pakes = JSON.parse(localStorage.getItem('pakeData')) || [];
+    let currentEditingId = null;
+
+    // --- 初期化 ---
+    window.onload = function() {
+        const dSelect = document.getElementById('regDName');
+        directorOptions.forEach(d => {
+            const option = document.createElement('option');
+            option.value = d; option.text = d; dSelect.appendChild(option);
+        });
+        const rSelect = document.getElementById('inputReviewer');
+        reviewerOptions.forEach(r => {
+            const option = document.createElement('option');
+            option.value = r; option.text = r; rSelect.appendChild(option);
+        });
+        document.getElementById('regDate').valueAsDate = new Date();
+        renderLists();
+    };
+
+    // --- 画面切り替え ---
+    function switchView(viewId, navEl, title) {
+        document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+        document.getElementById(viewId).classList.add('active');
+        document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+        navEl.classList.add('active');
+        document.getElementById('pageTitle').innerText = title;
+        if(viewId !== 'viewRegister') renderLists();
+    }
+
+    // --- 登録画面 ---
+    function toggleDateInput() {
+        const type = document.getElementById('regType').value;
+        const dateInput = document.getElementById('regDate');
+        if (type === 'temp') {
+            dateInput.disabled = true; dateInput.value = ""; 
+            dateInput.style.backgroundColor = "#eee"; document.getElementById('dateNote').style.display = "block";
+        } else {
+            dateInput.disabled = false; dateInput.valueAsDate = new Date();
+            dateInput.style.backgroundColor = "white"; document.getElementById('dateNote').style.display = "none";
+        }
+    }
+
+    // --- リスト描画 ---
+    function renderLists() {
+        const normalContainer = document.getElementById('normalList');
+        const tempContainer = document.getElementById('tempList');
+        normalContainer.innerHTML = ''; tempContainer.innerHTML = '';
+
+        const broadcastPakes = pakes.filter(p => p.broadcastDate && p.broadcastDate !== "");
+        broadcastPakes.sort((a, b) => new Date(b.broadcastDate) - new Date(a.broadcastDate));
+
+        if(broadcastPakes.length === 0) normalContainer.innerHTML = '<p style="text-align:center; color:#999;">放送予定はありません</p>';
+        broadcastPakes.forEach(pake => normalContainer.appendChild(createCard(pake, 'broadcast')));
+
+        const stockPakes = pakes.filter(p => p.type === 'temp' && (!p.broadcastDate || p.broadcastDate === ""));
+        stockPakes.sort((a, b) => a.submittedAt.localeCompare(b.submittedAt));
+
+        if(stockPakes.length === 0) tempContainer.innerHTML = '<p style="text-align:center; color:#999;">ストックはありません</p>';
+        stockPakes.forEach(pake => tempContainer.appendChild(createCard(pake, 'stock')));
+    }
+
+    function createCard(pake, listType) {
+        const isReviewed = pake.lastReviewer !== "";
+        const div = document.createElement('div');
+        let cardClass = "pake-card";
+        if (pake.type === 'temp') cardClass += " is-temp-origin";
+        if (isReviewed) cardClass += " status-done";
+        div.className = cardClass;
+        div.onclick = () => openDetailModal(pake.id);
+        
+        const statusText = isReviewed ? `✅ モニ会済 (${pake.lastReviewer})` : '⚠️ モニ会未実施';
+        let headerContent = "";
+        if (listType === 'broadcast') {
+            const tempBadge = pake.type === 'temp' ? '<span class="badge badge-stock" style="margin-left:5px;">元臨時</span>' : '';
+            headerContent = `<span class="date-label">${pake.broadcastDate} 放送分</span>${tempBadge}`;
+        } else {
+            const shortDate = pake.submittedAt.split(' ')[0];
+            headerContent = `<span class="date-label" style="color:#e74c3c;">📦 ストック (登録: ${shortDate})</span>`;
+        }
+        div.innerHTML = `<div class="card-header">${headerContent}</div><div class="program-name">${pake.programName}</div><div class="d-name">担当: ${pake.dName}</div><div class="moni-status ${isReviewed ? 'done' : ''}">${statusText}</div>`;
+        return div;
+    }
+
+    // --- 登録処理 ---
+    function registerPake() {
+        const dName = document.getElementById('regDName').value;
+        const program = document.getElementById('regProgram').value;
+        const type = document.getElementById('regType').value;
+        let date = document.getElementById('regDate').value;
+        if (!dName || !program) { alert("担当Dと番組名は必須です"); return; }
+        if (type === 'normal' && !date) { alert("通常パケは放送日が必須です"); return; }
+        if (type === 'temp') date = ""; 
+
+        const now = new Date();
+        const formattedNow = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, '0') + "-" + String(now.getDate()).padStart(2, '0') + " " + String(now.getHours()).padStart(2, '0') + ":" + String(now.getMinutes()).padStart(2, '0');
+        const newPake = { id: Date.now(), broadcastDate: date, dName: dName, programName: program, type: type, submittedAt: formattedNow, lastReviewer: "", lastReviewTime: "" };
+        
+        pakes.push(newPake);
+        localStorage.setItem('pakeData', JSON.stringify(pakes));
+        
+        document.getElementById('regProgram').value = ""; document.getElementById('regDName').selectedIndex = 0;
+        alert("登録しました！");
+        if (type === 'normal') switchView('viewNormal', document.querySelectorAll('.nav-item')[0], '📺 放送パケ一覧');
+        else switchView('viewTemp', document.querySelectorAll('.nav-item')[1], '📦 臨時ストック');
+    }
+
+    // --- 詳細・更新・削除処理 ---
+    function openDetailModal(id) {
+        const pake = pakes.find(p => p.id === id); if (!pake) return;
+        currentEditingId = id;
+        document.getElementById('detailDateInput').value = pake.broadcastDate || "";
+        document.getElementById('detailType').innerText = pake.type === 'normal' ? '通常パケ' : '🔴 臨時パケ';
+        document.getElementById('detailDName').innerText = pake.dName;
+        document.getElementById('detailProgram').innerText = pake.programName;
+        document.getElementById('detailSubmittedAt').innerText = pake.submittedAt;
+        document.getElementById('detailLastReviewer').innerText = pake.lastReviewer || "(未実施)";
+        const now = new Date(); now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+        document.getElementById('inputReviewTime').value = now.toISOString().slice(0, 16);
+        document.getElementById('inputReviewer').value = ""; 
+        document.getElementById('detailModal').classList.add('active');
+    }
+
+    function closeDetailModal() { document.getElementById('detailModal').classList.remove('active'); currentEditingId = null; }
+
+    function saveChanges() {
+        const reviewer = document.getElementById('inputReviewer').value;
+        const time = document.getElementById('inputReviewTime').value;
+        const newDate = document.getElementById('detailDateInput').value; 
+        const index = pakes.findIndex(p => p.id === currentEditingId);
+        if (index !== -1) {
+            pakes[index].broadcastDate = newDate;
+            if (reviewer) {
+                if(!time) { alert("確認日時も入力してください"); return; }
+                pakes[index].lastReviewer = reviewer;
+                pakes[index].lastReviewTime = time.replace('T', ' ');
+            }
+            localStorage.setItem('pakeData', JSON.stringify(pakes));
+            closeDetailModal(); renderLists(); alert("情報を更新しました！");
+        }
+    }
+
+    // ▼ パケ削除機能
+    function deletePake() {
+        if (!currentEditingId) return;
+        if (confirm("本当にこのパケを削除しますか？\n元に戻せません。")) {
+            pakes = pakes.filter(p => p.id !== currentEditingId);
+            localStorage.setItem('pakeData', JSON.stringify(pakes));
+            closeDetailModal();
+            renderLists();
+            alert("削除しました。");
+        }
+    }
+
+    // --- 管理機能 ---
+    function openSettings() {
+        const dataStr = JSON.stringify(pakes, null, 2);
+        document.getElementById('dataExportArea').value = dataStr;
+        document.getElementById('settingsModal').classList.add('active');
+    }
+    function closeSettings() { document.getElementById('settingsModal').classList.remove('active'); }
+    function copyData() {
+        const textArea = document.getElementById('dataExportArea');
+        textArea.select(); document.execCommand('copy'); 
+        alert("データをコピーしました！");
+    }
+    function resetData() {
+        if(confirm("【警告】全データが消えます。よろしいですか？")) {
+            localStorage.removeItem('pakeData'); pakes = []; renderLists(); closeSettings(); alert("リセットしました。");
+        }
+    }
+
+</script>
+
+</body>
+</html>
